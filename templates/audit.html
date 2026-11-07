@@ -1,0 +1,194 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TrustVault - Audit History</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 25px;
+            background-color: #f4f6f9;
+        }
+
+        h1 {
+            color: #243447;
+        }
+
+        .message {
+            padding: 12px;
+            margin: 15px 0;
+            border-radius: 5px;
+            background-color: #e8f4ea;
+            color: #216b35;
+        }
+
+        .error {
+            background-color: #fdeaea;
+            color: #a12626;
+        }
+
+        .table-container {
+            overflow-x: auto;
+            background: white;
+            padding: 10px;
+            border-radius: 8px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 900px;
+        }
+
+        th, td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: left;
+            font-size: 13px;
+        }
+
+        th {
+            background-color: #243447;
+            color: white;
+        }
+
+        tr:nth-child(even) {
+            background-color: #f2f2f2;
+        }
+
+        .success {
+            color: green;
+            font-weight: bold;
+        }
+
+        .denied {
+            color: red;
+            font-weight: bold;
+        }
+
+        .hash {
+            word-break: break-all;
+            max-width: 220px;
+        }
+
+        .actions {
+            margin: 20px 0;
+        }
+
+        a {
+            color: #0759a5;
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        .verify-link {
+            display: inline-block;
+            background-color: #1769aa;
+            color: white;
+            padding: 10px 15px;
+            border-radius: 5px;
+        }
+
+        .verify-link:hover {
+            background-color: #0d4d80;
+            text-decoration: none;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>TrustVault - Admin Audit History</h1>
+
+    <!-- Verification and flash messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}
+            <div class="message {% if category == 'error' %}error{% endif %}">
+                {{ message }}
+            </div>
+        {% endfor %}
+    {% endwith %}
+
+    <div class="actions">
+        <a class="verify-link"
+           href="{{ url_for('verify_audit_history') }}">
+            Verify Audit Integrity
+        </a>
+    </div>
+
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>User</th>
+                    <th>Action</th>
+                    <th>Status</th>
+                    <th>Document ID</th>
+                    <th>Details</th>
+                    <th>Date</th>
+                    <th>Event Hash</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                {% for log in logs %}
+                <tr>
+                    <td>{{ log.id }}</td>
+
+                    <td>
+                        {% if log.actor %}
+                            {{ log.actor.email }}
+                        {% else %}
+                            Unknown / Anonymous
+                        {% endif %}
+                    </td>
+
+                    <td>{{ log.action }}</td>
+
+                    <td>
+                        {% if log.status == 'SUCCESS' %}
+                            <span class="success">{{ log.status }}</span>
+                        {% else %}
+                            <span class="denied">{{ log.status }}</span>
+                        {% endif %}
+                    </td>
+
+                    <td>
+                        {% if log.document_id %}
+                            {{ log.document_id }}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+
+                    <td>{{ log.details or '-' }}</td>
+
+                    <td>{{ log.created_at }}</td>
+
+                    <td class="hash">
+                        {{ log.event_hash or '-' }}
+                    </td>
+                </tr>
+
+                {% else %}
+                <tr>
+                    <td colspan="8">No audit records found.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <br>
+
+    <a href="{{ url_for('dashboard') }}">Back to Dashboard</a>
+
+</body>
+</html>

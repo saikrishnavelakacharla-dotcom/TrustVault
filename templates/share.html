@@ -1,0 +1,76 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Share Document - TrustVault</title>
+</head>
+<body>
+
+<h1>Share Document</h1>
+
+<h3>{{ document.filename }}</h3>
+
+<form method="POST">
+
+    <input type="hidden" name="csrf_token"
+           value="{{ csrf_token() }}">
+
+    <label>Viewer Email:</label>
+    <input type="email" name="email" required>
+
+    <br><br>
+
+    <label>Permission:</label>
+
+    <select name="permission" required>
+        <option value="read">Read</option>
+        <option value="edit">Edit</option>
+    </select>
+
+    <br><br>
+
+    <button type="submit">Share Document</button>
+
+</form>
+
+<hr>
+
+<h2>Users With Access</h2>
+
+{% if permissions %}
+<table border="1" cellpadding="10">
+    <tr>
+        <th>Email</th>
+        <th>Permission</th>
+        <th>Action</th>
+    </tr>
+
+    {% for permission in permissions %}
+    <tr>
+        <td>{{ permission.user.email }}</td>
+        <td>{{ permission.permission }}</td>
+        <td>
+            <form method="POST"
+                  action="{{ url_for('revoke_access',
+                  document_id=document.id,
+                  permission_id=permission.id) }}">
+
+                <input type="hidden" name="csrf_token"
+                       value="{{ csrf_token() }}">
+
+                <button type="submit">Revoke Access</button>
+            </form>
+        </td>
+    </tr>
+    {% endfor %}
+</table>
+{% else %}
+<p>No users have access yet.</p>
+{% endif %}
+
+<br>
+
+<a href="{{ url_for('dashboard') }}">Back to Dashboard</a>
+
+</body>
+</html>

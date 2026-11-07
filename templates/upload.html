@@ -1,0 +1,54 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>TrustVault - Document Upload</title>
+</head>
+<body>
+
+    <h1>TrustVault</h1>
+    <h3>Upload Your Document</h3>
+
+    {% with messages = get_flashed_messages() %}
+        {% for message in messages %}
+            <p style="color:red;">{{ message }}</p>
+        {% endfor %}
+    {% endwith %}
+
+    <form method="POST" enctype="multipart/form-data">
+
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <label>Choose Document:</label>
+        <input
+            type="file"
+            name="file"
+            accept=".pdf,.docx,.txt"
+            required
+        >
+
+        <br><br>
+
+        <label>Category:</label>
+
+        <select name="category" required>
+            <option value="">Select Category</option>
+            <option value="Personal">Personal</option>
+            <option value="Education">Education</option>
+            <option value="Work">Work</option>
+            <option value="Other">Other</option>
+        </select>
+
+        <br><br>
+
+        <button type="submit">Upload Document</button>
+
+    </form>
+
+    <br>
+
+    <a href="{{ url_for('dashboard') }}">Back to Dashboard</a>
+
+</body>
+</html>
+
