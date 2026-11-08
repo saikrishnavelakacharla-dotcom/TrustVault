@@ -5,3 +5,6 @@ instance/
 .env
 .pytest_cache/
 create_users_old_backup.py
+
+# Local source backup
+app_original.py

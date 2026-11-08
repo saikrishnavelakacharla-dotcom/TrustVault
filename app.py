@@ -187,12 +187,8 @@ def verify_audit_logs():
 
     for log in logs:
 
-        # Check previous hash connection
-
         if (log.previous_hash or "") != expected_previous_hash:
             chain_errors.append(log.id)
-
-        # Recreate the original event data
 
         event_data = {
             "actor_id": log.actor_id,
@@ -216,16 +212,10 @@ def verify_audit_logs():
             ).encode("utf-8")
         ).hexdigest()
 
-        # Check event hash
-
         if calculated_hash != log.event_hash:
             event_errors.append(log.id)
 
-        # Continue checking the complete chain
-
         expected_previous_hash = log.event_hash or ""
-
-    # Prepare complete verification report
 
     if event_errors or chain_errors:
 
@@ -277,6 +267,39 @@ def get_document_access(document):
         return permission.permission.lower()
 
     return None
+
+
+# --------------------------------------------------
+# GET ACTIVE DOCUMENT
+# --------------------------------------------------
+
+def get_active_document(document_id, action):
+
+    document = db.session.get(Document, document_id)
+
+    if not document:
+
+        record_audit(
+            action=action,
+            status="DENIED",
+            document_id=document_id,
+            details="Document not found"
+        )
+
+        abort(404)
+
+    if document.is_deleted:
+
+        record_audit(
+            action=action,
+            status="DENIED",
+            document_id=document.id,
+            details="Attempted to access a deleted document"
+        )
+
+        abort(404)
+
+    return document
 
 
 # --------------------------------------------------
@@ -370,22 +393,30 @@ def login():
 
 
 # --------------------------------------------------
-# DASHBOARD
+# DASHBOARD WITH DOCUMENT SEARCH
 # --------------------------------------------------
 
 @app.route("/dashboard")
 @login_required
 def dashboard():
 
+    search_query = request.args.get(
+        "q", ""
+    ).strip().casefold()
+
     if current_user.role == "Admin":
 
-        my_documents = Document.query.all()
+        my_documents = Document.query.filter_by(
+            is_deleted=False
+        ).all()
+
         shared_documents = []
 
     else:
 
         my_documents = Document.query.filter_by(
-            owner_id=current_user.id
+            owner_id=current_user.id,
+            is_deleted=False
         ).all()
 
         permissions = DocumentPermission.query.filter_by(
@@ -395,13 +426,59 @@ def dashboard():
         shared_documents = [
             permission.document
             for permission in permissions
-            if permission.document is not None
+            if (
+                permission.document is not None
+                and not permission.document.is_deleted
+            )
+        ]
+
+    # Search only documents the user is allowed to see
+    if search_query:
+
+        def matches_search(document):
+
+            filename = (
+                document.filename or ""
+            ).casefold()
+
+            category = (
+                document.category or ""
+            ).casefold()
+
+            owner_name = (
+                document.owner.name or ""
+                if document.owner else ""
+            ).casefold()
+
+            owner_email = (
+                document.owner.email or ""
+                if document.owner else ""
+            ).casefold()
+
+            return (
+                search_query in filename
+                or search_query in category
+                or search_query in owner_name
+                or search_query in owner_email
+            )
+
+        my_documents = [
+            document
+            for document in my_documents
+            if matches_search(document)
+        ]
+
+        shared_documents = [
+            document
+            for document in shared_documents
+            if matches_search(document)
         ]
 
     return render_template(
         "dashboard.html",
         my_documents=my_documents,
-        shared_documents=shared_documents
+        shared_documents=shared_documents,
+        search_query=search_query
     )
 
 
@@ -521,18 +598,10 @@ def upload():
 @login_required
 def share_document(document_id):
 
-    document = db.session.get(Document, document_id)
-
-    if not document:
-
-        record_audit(
-            action="SHARE_PERMISSION",
-            status="DENIED",
-            document_id=document_id,
-            details="Document not found"
-        )
-
-        abort(404)
+    document = get_active_document(
+        document_id,
+        "SHARE_PERMISSION"
+    )
 
     owner_required(document)
 
@@ -644,13 +713,10 @@ def share_document(document_id):
 @login_required
 def revoke_access(document_id, permission_id):
 
-    document = db.session.get(
-        Document,
-        document_id
+    document = get_active_document(
+        document_id,
+        "REVOKE_PERMISSION"
     )
-
-    if not document:
-        abort(404)
 
     owner_required(document)
 
@@ -663,6 +729,14 @@ def revoke_access(document_id, permission_id):
         not permission
         or permission.document_id != document.id
     ):
+
+        record_audit(
+            action="REVOKE_PERMISSION",
+            status="DENIED",
+            document_id=document.id,
+            details="Permission record not found"
+        )
+
         abort(404)
 
     target_user_id = permission.user_id
@@ -699,21 +773,10 @@ def revoke_access(document_id, permission_id):
 @login_required
 def edit_document(document_id):
 
-    document = db.session.get(
-        Document,
-        document_id
+    document = get_active_document(
+        document_id,
+        "EDIT"
     )
-
-    if not document:
-
-        record_audit(
-            action="EDIT",
-            status="DENIED",
-            document_id=document_id,
-            details="Document not found"
-        )
-
-        abort(404)
 
     access = get_document_access(document)
 
@@ -781,6 +844,53 @@ def edit_document(document_id):
 
 
 # --------------------------------------------------
+# DELETE DOCUMENT - SOFT DELETE
+# --------------------------------------------------
+
+@app.route(
+    "/documents/<int:document_id>/delete",
+    methods=["POST"]
+)
+@login_required
+def delete_document(document_id):
+
+    document = get_active_document(
+        document_id,
+        "DELETE"
+    )
+
+    # Only Admin or document owner can delete
+    if (
+        current_user.role != "Admin"
+        and document.owner_id != current_user.id
+    ):
+
+        deny_access(
+            action="DELETE",
+            document_id=document.id,
+            details=(
+                "Unauthorized user attempted to delete document"
+            )
+        )
+
+    # Soft delete: keep the database record and original file
+    document.is_deleted = True
+
+    db.session.commit()
+
+    record_audit(
+        action="DELETE",
+        status="SUCCESS",
+        document_id=document.id,
+        details="Document soft deleted successfully"
+    )
+
+    flash("Document deleted successfully")
+
+    return redirect(url_for("dashboard"))
+
+
+# --------------------------------------------------
 # DOWNLOAD DOCUMENT
 # --------------------------------------------------
 
@@ -791,21 +901,10 @@ def edit_document(document_id):
 @login_required
 def download_document(document_id):
 
-    document = db.session.get(
-        Document,
-        document_id
+    document = get_active_document(
+        document_id,
+        "DOWNLOAD"
     )
-
-    if not document:
-
-        record_audit(
-            action="DOWNLOAD",
-            status="DENIED",
-            document_id=document_id,
-            details="Document not found"
-        )
-
-        abort(404)
 
     access = get_document_access(document)
 

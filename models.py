@@ -39,7 +39,11 @@ class Document(db.Model):
 
     filename = db.Column(db.String(255), nullable=False)
 
-    stored_filename = db.Column(db.String(255), unique=True, nullable=False)
+    stored_filename = db.Column(
+        db.String(255),
+        unique=True,
+        nullable=False
+    )
 
     category = db.Column(db.String(100))
 
@@ -55,6 +59,13 @@ class Document(db.Model):
     )
 
     owner = db.relationship("User", backref="documents")
+
+    # Soft delete
+    is_deleted = db.Column(
+        db.Boolean,
+        default=False,
+        nullable=False
+    )
 
 
 # =====================================
@@ -124,9 +135,15 @@ class AuditLog(db.Model):
         nullable=True
     )
 
-    action = db.Column(db.String(100), nullable=False)
+    action = db.Column(
+        db.String(100),
+        nullable=False
+    )
 
-    status = db.Column(db.String(20), nullable=False)
+    status = db.Column(
+        db.String(20),
+        nullable=False
+    )
 
     details = db.Column(db.Text)
 
@@ -138,7 +155,6 @@ class AuditLog(db.Model):
         nullable=False
     )
 
-    # Hash chain fields
     previous_hash = db.Column(db.String(64))
 
     event_hash = db.Column(db.String(64))
