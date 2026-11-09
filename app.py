@@ -43,8 +43,6 @@ app = Flask(__name__)
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
-# Local: uses instance folder.
-# Render: can use TRUSTVAULT_DATA_DIR environment variable.
 DATA_DIR = os.environ.get(
     "TRUSTVAULT_DATA_DIR",
     os.path.join(BASE_DIR, "instance")
@@ -69,7 +67,6 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
 
-# Secure session cookies in production (HTTPS).
 if os.environ.get("RENDER"):
     app.config["SESSION_COOKIE_SECURE"] = True
     app.config["SESSION_COOKIE_HTTPONLY"] = True
@@ -94,11 +91,64 @@ login_manager.login_message = "Please log in to access this page."
 
 
 # --------------------------------------------------
-# CREATE DATABASE TABLES
+# CREATE DATABASE TABLES AND ADMIN ACCOUNT
 # --------------------------------------------------
 
 with app.app_context():
+
     db.create_all()
+
+    admin_email = os.environ.get(
+        "ADMIN_EMAIL", ""
+    ).strip().lower()
+
+    admin_password = os.environ.get(
+        "ADMIN_PASSWORD", ""
+    )
+
+    if admin_email and admin_password:
+
+        existing_admin = User.query.filter_by(
+            email=admin_email
+        ).first()
+
+        if existing_admin is None:
+
+            if len(admin_password) < 8:
+
+                app.logger.error(
+                    "Admin password must be at least 8 characters."
+                )
+
+            else:
+
+                admin = User(
+                    name="Admin",
+                    email=admin_email,
+                    role="Admin"
+                )
+
+                admin.set_password(admin_password)
+
+                db.session.add(admin)
+                db.session.commit()
+
+                app.logger.info(
+                    "Initial Admin account created successfully."
+                )
+
+        elif existing_admin.role != "Admin":
+
+            app.logger.warning(
+                "The configured Admin email belongs to a non-Admin user. "
+                "No account changes were made."
+            )
+
+        else:
+
+            app.logger.info(
+                "Admin account already exists."
+            )
 
 
 # --------------------------------------------------
@@ -107,6 +157,7 @@ with app.app_context():
 
 @login_manager.user_loader
 def load_user(user_id):
+
     return db.session.get(User, int(user_id))
 
 
@@ -121,7 +172,9 @@ def record_audit(
     target_user_id=None,
     details=None
 ):
+
     try:
+
         actor_id = (
             current_user.id
             if current_user.is_authenticated
@@ -180,8 +233,12 @@ def record_audit(
         db.session.commit()
 
     except Exception:
+
         db.session.rollback()
-        app.logger.exception("Audit logging failed")
+
+        app.logger.exception(
+            "Audit logging failed"
+        )
 
 
 # --------------------------------------------------
@@ -202,6 +259,7 @@ def verify_audit_logs():
     for log in logs:
 
         if (log.previous_hash or "") != expected_previous_hash:
+
             chain_errors.append(log.id)
 
         event_data = {
@@ -227,6 +285,7 @@ def verify_audit_logs():
         ).hexdigest()
 
         if calculated_hash != log.event_hash:
+
             event_errors.append(log.id)
 
         expected_previous_hash = log.event_hash or ""
@@ -267,9 +326,11 @@ def allowed_file(filename):
 def get_document_access(document):
 
     if current_user.role == "Admin":
+
         return "admin"
 
     if document.owner_id == current_user.id:
+
         return "owner"
 
     permission = DocumentPermission.query.filter_by(
@@ -278,6 +339,7 @@ def get_document_access(document):
     ).first()
 
     if permission:
+
         return permission.permission.lower()
 
     return None
@@ -289,7 +351,10 @@ def get_document_access(document):
 
 def get_active_document(document_id, action):
 
-    document = db.session.get(Document, document_id)
+    document = db.session.get(
+        Document,
+        document_id
+    )
 
     if not document:
 
@@ -320,7 +385,11 @@ def get_active_document(document_id, action):
 # DENY UNAUTHORIZED ACCESS
 # --------------------------------------------------
 
-def deny_access(action, document_id=None, details=None):
+def deny_access(
+    action,
+    document_id=None,
+    details=None
+):
 
     record_audit(
         action=action,
@@ -342,6 +411,7 @@ def owner_required(document):
         current_user.role == "Admin"
         or document.owner_id == current_user.id
     ):
+
         return
 
     deny_access(
@@ -361,6 +431,7 @@ def owner_required(document):
 def home():
 
     if current_user.is_authenticated:
+
         return redirect(url_for("dashboard"))
 
     return redirect(url_for("login"))
@@ -374,14 +445,22 @@ def home():
 def login():
 
     if current_user.is_authenticated:
+
         return redirect(url_for("dashboard"))
 
     if request.method == "POST":
 
-        email = request.form.get("email", "").strip()
-        password = request.form.get("password", "")
+        email = request.form.get(
+            "email", ""
+        ).strip()
 
-        user = User.query.filter_by(email=email).first()
+        password = request.form.get(
+            "password", ""
+        )
+
+        user = User.query.filter_by(
+            email=email
+        ).first()
 
         if user and user.check_password(password):
 
@@ -516,7 +595,9 @@ def upload():
     if request.method == "POST":
 
         if "file" not in request.files:
+
             flash("Please select a document")
+
             return redirect(url_for("upload"))
 
         file = request.files["file"]
@@ -526,7 +607,9 @@ def upload():
         ).strip()
 
         if file.filename == "":
+
             flash("No file selected")
+
             return redirect(url_for("upload"))
 
         if not allowed_file(file.filename):
@@ -538,6 +621,7 @@ def upload():
             )
 
             flash("Only PDF, DOCX and TXT files are allowed")
+
             return redirect(url_for("upload"))
 
         if category not in [
@@ -546,18 +630,27 @@ def upload():
             "Work",
             "Other"
         ]:
+
             flash("Please select a valid category")
+
             return redirect(url_for("upload"))
 
-        original_filename = secure_filename(file.filename)
+        original_filename = secure_filename(
+            file.filename
+        )
 
         if not original_filename:
+
             flash("Invalid filename")
+
             return redirect(url_for("upload"))
 
         stored_filename = original_filename
 
-        name, extension = os.path.splitext(original_filename)
+        name, extension = os.path.splitext(
+            original_filename
+        )
+
         counter = 1
 
         while os.path.exists(
@@ -566,7 +659,11 @@ def upload():
                 stored_filename
             )
         ):
-            stored_filename = f"{name}_{counter}{extension}"
+
+            stored_filename = (
+                f"{name}_{counter}{extension}"
+            )
+
             counter += 1
 
         file.save(
@@ -620,7 +717,9 @@ def share_document(document_id):
 
     if request.method == "POST":
 
-        email = request.form.get("email", "").strip()
+        email = request.form.get(
+            "email", ""
+        ).strip()
 
         permission_type = request.form.get(
             "permission", ""
@@ -631,7 +730,9 @@ def share_document(document_id):
         ).first()
 
         if not target_user:
+
             flash("User not found")
+
             return redirect(
                 url_for(
                     "share_document",
@@ -640,9 +741,11 @@ def share_document(document_id):
             )
 
         if target_user.role != "Viewer":
+
             flash(
                 "You can share documents only with Viewer accounts"
             )
+
             return redirect(
                 url_for(
                     "share_document",
@@ -651,7 +754,9 @@ def share_document(document_id):
             )
 
         if permission_type not in ["read", "edit"]:
+
             flash("Invalid permission")
+
             return redirect(
                 url_for(
                     "share_document",
@@ -660,7 +765,9 @@ def share_document(document_id):
             )
 
         if target_user.id == current_user.id:
+
             flash("You cannot share a document with yourself")
+
             return redirect(
                 url_for(
                     "share_document",
@@ -674,9 +781,11 @@ def share_document(document_id):
         ).first()
 
         if permission:
+
             permission.permission = permission_type
 
         else:
+
             permission = DocumentPermission(
                 document_id=document.id,
                 user_id=target_user.id,
@@ -812,7 +921,9 @@ def edit_document(document_id):
         ).strip()
 
         if not new_filename:
+
             flash("Document name cannot be empty")
+
             return redirect(
                 url_for(
                     "edit_document",
@@ -826,7 +937,9 @@ def edit_document(document_id):
             "Work",
             "Other"
         ]:
+
             flash("Invalid category")
+
             return redirect(
                 url_for(
                     "edit_document",
@@ -1017,9 +1130,11 @@ def verify_audit_history():
     is_valid, message = verify_audit_logs()
 
     if is_valid:
+
         flash(message, "success")
 
     else:
+
         flash(message, "warning")
 
     return redirect(url_for("audit_history"))
@@ -1077,7 +1192,9 @@ def file_too_large(error):
 
 if __name__ == "__main__":
 
-    debug_mode = os.environ.get("FLASK_DEBUG", "0") == "1"
+    debug_mode = os.environ.get(
+        "FLASK_DEBUG", "0"
+    ) == "1"
 
     app.run(
         host="0.0.0.0",
