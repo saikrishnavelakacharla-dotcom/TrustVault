@@ -42,8 +42,16 @@ from models import (
 app = Flask(__name__)
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-INSTANCE_DIR = os.path.join(BASE_DIR, "instance")
-UPLOAD_FOLDER = os.path.join(INSTANCE_DIR, "uploads")
+
+# Local: uses instance folder.
+# Render: can use TRUSTVAULT_DATA_DIR environment variable.
+DATA_DIR = os.environ.get(
+    "TRUSTVAULT_DATA_DIR",
+    os.path.join(BASE_DIR, "instance")
+)
+
+INSTANCE_DIR = DATA_DIR
+UPLOAD_FOLDER = os.path.join(DATA_DIR, "uploads")
 
 os.makedirs(INSTANCE_DIR, exist_ok=True)
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -60,6 +68,12 @@ app.config["SQLALCHEMY_DATABASE_URI"] = (
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
+
+# Secure session cookies in production (HTTPS).
+if os.environ.get("RENDER"):
+    app.config["SESSION_COOKIE_SECURE"] = True
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
 ALLOWED_EXTENSIONS = {"pdf", "docx", "txt"}
 
@@ -432,7 +446,6 @@ def dashboard():
             )
         ]
 
-    # Search only documents the user is allowed to see
     if search_query:
 
         def matches_search(document):
@@ -859,7 +872,6 @@ def delete_document(document_id):
         "DELETE"
     )
 
-    # Only Admin or document owner can delete
     if (
         current_user.role != "Admin"
         and document.owner_id != current_user.id
@@ -873,7 +885,6 @@ def delete_document(document_id):
             )
         )
 
-    # Soft delete: keep the database record and original file
     document.is_deleted = True
 
     db.session.commit()
@@ -1066,4 +1077,10 @@ def file_too_large(error):
 
 if __name__ == "__main__":
 
-    app.run(debug=True)
+    debug_mode = os.environ.get("FLASK_DEBUG", "0") == "1"
+
+    app.run(
+        host="0.0.0.0",
+        port=int(os.environ.get("PORT", 5000)),
+        debug=debug_mode
+    )
