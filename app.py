@@ -91,12 +91,16 @@ login_manager.login_message = "Please log in to access this page."
 
 
 # --------------------------------------------------
-# CREATE DATABASE TABLES AND ADMIN ACCOUNT
+# CREATE DATABASE TABLES AND ACCOUNTS
 # --------------------------------------------------
 
 with app.app_context():
 
     db.create_all()
+
+    # --------------------------------------------------
+    # AUTOMATIC ADMIN ACCOUNT CREATION
+    # --------------------------------------------------
 
     admin_email = os.environ.get(
         "ADMIN_EMAIL", ""
@@ -148,6 +152,61 @@ with app.app_context():
 
             app.logger.info(
                 "Admin account already exists."
+            )
+
+    # --------------------------------------------------
+    # AUTOMATIC VIEWER ACCOUNT CREATION
+    # --------------------------------------------------
+
+    viewer_email = os.environ.get(
+        "VIEWER_EMAIL", ""
+    ).strip().lower()
+
+    viewer_password = os.environ.get(
+        "VIEWER_PASSWORD", ""
+    )
+
+    if viewer_email and viewer_password:
+
+        existing_viewer = User.query.filter_by(
+            email=viewer_email
+        ).first()
+
+        if existing_viewer is None:
+
+            if len(viewer_password) < 8:
+
+                app.logger.error(
+                    "Viewer password must be at least 8 characters."
+                )
+
+            else:
+
+                viewer = User(
+                    name="Viewer",
+                    email=viewer_email,
+                    role="Viewer"
+                )
+
+                viewer.set_password(viewer_password)
+
+                db.session.add(viewer)
+                db.session.commit()
+
+                app.logger.info(
+                    "Viewer account created successfully."
+                )
+
+        elif existing_viewer.role != "Viewer":
+
+            app.logger.warning(
+                "The configured Viewer email belongs to another role."
+            )
+
+        else:
+
+            app.logger.info(
+                "Viewer account already exists."
             )
 
 
